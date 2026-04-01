@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Waggy Dash</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #FDF8F0; font-family: Georgia, serif; -webkit-text-size-adjust: 100%; }
+#root { min-height: 100vh; }
+textarea, input, select, button { -webkit-appearance: none; }
+</style>
+</head>
+<body>
+<div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#7A4A30;font-size:14px;">Loading Dash...</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js" crossorigin></script>
+
+<script>
+window.storage = {
+  get: function(key) {
+    return new Promise(function(resolve, reject) {
+      try {
+        var val = localStorage.getItem(key);
+        if (val === null) { reject(new Error("Key not found: " + key)); return; }
+        resolve({ key: key, value: val, shared: false });
+      } catch(e) { reject(e); }
+    });
+  },
+  set: function(key, value) {
+    return new Promise(function(resolve, reject) {
+      try {
+        localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+        resolve({ key: key, value: value, shared: false });
+      } catch(e) { reject(e); }
+    });
+  },
+  delete: function(key) {
+    return new Promise(function(resolve) {
+      localStorage.removeItem(key);
+      resolve({ key: key, deleted: true });
+    });
+  },
+  list: function(prefix) {
+    return new Promise(function(resolve) {
+      var keys = [];
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!prefix || k.startsWith(prefix)) keys.push(k);
+      }
+      resolve({ keys: keys });
+    });
+  }
+};
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+
+
+// ══════════════════════════════════════════════════════════════════════════
+// BOOK CONFIG — update this block only when starting a new book
+// ══════════════════════════════════════════════════════════════════════════
+const BOOK={
+  storageKey:"wr-b2",
+  title:"Before You Book™",
+  num:2,
+  totalChs:18,
+  welcomeChs:[1],
+  sections:{
+    "What to Look For":"#3D2352",
+    "Doing Your Research":"#5C3A7A",
+    "The Visit":"#7A4A9B",
+    "Making the Decision":"#9B6DC0",
+  },
+  resources:[
+    {phrase:"Worksheet 1 — Boarder Comparison Notes",key:"ws_1",label:"WS1 — Boarder Comparison Notes",ch:2},
+    {phrase:"Worksheet 1 — Boarder Comparison Notes",key:"ws_1b",label:"WS1 — Boarder Comparison Notes (cont.)",ch:4},
+    {phrase:"Worksheet 2 — Phone Call Notes",key:"ws_2",label:"WS2 — Phone Call Notes",ch:7},
+    {phrase:"Worksheet 3 — Visit Walkthrough Notes",key:"ws_3",label:"WS3 — Visit Walkthrough Notes",ch:10},
+    {phrase:"Worksheet 4 — Trial Day Notes",key:"ws_4",label:"WS4 — Trial Day Notes",ch:13},
+    {phrase:"Worksheet 5 — My Questions Before I Book",key:"ws_5",label:"WS5 — My Questions Before I Book",ch:8},
+    {phrase:"Tool 1 — Questions to Ask on the Phone",key:"t1",label:"T1 — Questions to Ask on the Phone",ch:7},
+    {phrase:"Tool 2 — Questions to Ask on the Tour",key:"t2",label:"T2 — Questions to Ask on the Tour",ch:9},
+    {phrase:"Tool 3 — Red Flags Quick Reference",key:"t3",label:"T3 — Red Flags Quick Reference",ch:3},
+    {phrase:"Tool 4 — My Dog’s Profile for the Boarder",key:"t4",label:"T4 — My Dog’s Profile for the Boarder",ch:15},
+    {phrase:"Tool 5 — The Decision Checklist",key:"t5",label:"T5 — The Decision Checklist",ch:16},
+    {phrase:"Tool 6 — Boarder Contact & Booking Record",key:"t6",label:"T6 — Boarder Contact & Booking Record",ch:16},
+    {phrase:"Tool 7 — My Notes",key:"t7",label:"T7 — My Notes",ch:17},
+  ],
+};
+// ══════════════════════════════════════════════════════════════════════════
+const SL={opening:"Opening Line",p1:"Hook (P1)",p2:"Waggy Experience (P2)",p3:"Information (P3)",p4:"Reassurance (P4)",p5:"Practical (P5)",encourage1:"Encourage 1",encourage2:"Encourage 2",tip:"Expert Tip",quote:"Bottom Quote"};
+const WL={opening:25,p1:55,p2:55,p3:60,p4:55,p5:55,encourage1:18,encourage2:18,tip:30,quote:20,welcome_p:120};
+const SC=BOOK.sections;
+const SCFG={completed:{label:"COMPLETED",text:"#065F46",dot:"#10B981"},pending:{label:"PENDING",text:"#9A3412",dot:"#F97316"},review:{label:"REVIEW",text:"#92400E",dot:"#F59E0B"}};
+const PL=["Hook","Waggy Exp.","Information","Reassurance","Practical"];
+const WC_CATS=["Door Moments","Owner Language","Dog Behavior","Reassurance","General"];
+const CC={"Door Moments":"#7A4A30","Owner Language":"#9B6B4E","Dog Behavior":"#B8875E","Reassurance":"#C8A080","General":"#9B7B5E"};
+const S0={opening:"",p2:"",encourage1:"",encourage2:"",tip:"",quote:""};
+const mk=(n,t,s)=>({num:n,title:t,section:s,status:"pending",p:[],s:{...S0}});
+const SEED=[
+{"num":1,"title":"A Note Before You Start","section":"What to Look For","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":2,"title":"Kennel vs. In-Home Boarding — What's the Difference?","section":"What to Look For","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":3,"title":"Red Flags You Should Never Ignore","section":"What to Look For","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":4,"title":"What Great Boarding Actually Looks Like","section":"What to Look For","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":5,"title":"Where to Find Trustworthy Boarding Options","section":"Doing Your Research","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":6,"title":"What Online Reviews Actually Tell You","section":"Doing Your Research","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":7,"title":"The Phone Call That Tells You Everything","section":"Doing Your Research","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":8,"title":"The Questions You're Too Nervous to Ask","section":"Doing Your Research","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":9,"title":"Why You Must Visit Before You Book","section":"The Visit","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":10,"title":"What to Look for When You Walk Through the Door","section":"The Visit","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":11,"title":"Watching How Staff Interact with Dogs","section":"The Visit","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":12,"title":"Questions to Ask on the Tour","section":"The Visit","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":13,"title":"The Trial Day — What to Expect and What to Watch For","section":"The Visit","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":14,"title":"Trust Your Dog's Reaction","section":"Making the Decision","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":15,"title":"What a Great Boarder Will Ask You","section":"Making the Decision","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":16,"title":"When You've Found the Right One","section":"Making the Decision","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":17,"title":"Your Questions, Honestly Answered","section":"Making the Decision","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+{"num":18,"title":"Final Encouragement","section":"Making the Decision","status":"pending","p":[],"s":{"opening":"","p2":"","encourage1":"","encourage2":"","tip":"","quote":""}},
+];
+const INIT=SEED;
+
+const ACK=[
+  {id:"sniff",label:"Sniff Rule",patterns:["sniff","sniffs","sniffing","sniffed"],fix:"working the fence line / nose to the ground"},
+  {id:"twenty",label:"Twenty years",patterns:["twenty years"],fix:'Use "20 years"'},
+  {id:"c1",label:"Announced Point",patterns:["this is why","this is what","which is why"],fix:"State the point directly."},
+  {id:"c2",label:"Passive Authority",patterns:["studies suggest","research indicates","experts recommend"],fix:"Replace with 20 years or we've watched."},
+  {id:"c3",label:"Conditional Permission",patterns:["it's okay to","there's nothing wrong with"],fix:"Name the feeling."},
+  {id:"c4",label:"Hollow Intensifier",patterns:["absolutely fine","totally normal","perfectly normal","completely normal"],fix:"Remove the intensifier."},
+  {id:"c6",label:"False Specificity",patterns:["many owners","most dogs","most owners"],fix:"Use 20 years or a real story."},
+  {id:"w1",label:"AI Opener",patterns:["here's the thing","the truth is","the thing is"],fix:"Begin with the actual thought."},
+  {id:"w2",label:"Hollow Validation",patterns:["you're not alone","makes total sense","we get it"],fix:"Show understanding through a specific observation."},
+  {id:"w3",label:"Motivational Poster",patterns:["you've got this","trust the process"],fix:"Earn the encouragement."},
+  {id:"w5",label:"Transition Filler",patterns:["with that in mind","that being said","all of that to say"],fix:"Delete. Begin with the thought."},
+  {id:"hedge",label:"Hedge Word",patterns:["tends to","can sometimes","may help","might help"],fix:"State certainty."},
+  {id:"tense",label:"Tense Violation",patterns:["felt like","wondered why","owners worried","owners feared"],fix:"Present tense for general patterns."},
+  {id:"ha1",label:"HIGH ALERT: something",patterns:["something"],fix:"one thing / a detail / a moment"},
+  {id:"ha2",label:"HIGH ALERT: completely",patterns:["completely"],fix:"Cut it."},
+  {id:"ha3",label:"HIGH ALERT: everything",patterns:["everything"],fix:"Name what it refers to."},
+  {id:"ha4",label:"HIGH ALERT: fine",patterns:[" fine "," fine."," fine,"],fix:"through it / past it"},
+  {id:"ha5",label:"HIGH ALERT: settle",patterns:["settle","settles"],fix:"finds their footing"},
+];
+const BRIT=["favourite","behaviour","colour","travelling","cancelled","organised","recognised","realised","practised","centre","defence","twenty years"];
+const GC=[{id:"g1",label:"Read Aloud",desc:"Every sentence read aloud. Any needing a second read — rewrite."},{id:"g2",label:"Missing Words",desc:"Check for missing articles (a/an/the), conjunctions, subjects after dashes."},{id:"g3",label:"Unclear Pronouns",desc:"Every they/them/it/this needs a clear antecedent."},{id:"g4",label:"Repeated Content",desc:"No paragraph substantially repeats the one before it."},{id:"g5",label:"Clunky Phrases",desc:"Hyphenated verb-phrases as nouns: the not-eating becomes skipping food."},{id:"g6",label:"Present Tense",desc:"General patterns: present tense. Past only for specific named Waggy stories."},{id:"g7",label:"American English",desc:"Check: favourite, behaviour, colour, travelling, cancelled, organised, twenty years"},{id:"g8",label:"Door Test",desc:"Could Colleen say this aloud at the front door?"}];
+const NAV=[{id:"tracker",icon:"📋",label:"Tracker"},{id:"auth",icon:"✦",label:"Auth"},{id:"compare",icon:"↔",label:"Compare"},{id:"openings",icon:"◎",label:"Openings"},{id:"signoff",icon:"□",label:"Sign-Off"},{id:"edit",icon:"✏️",label:"Edit"},{id:"links",icon:"🔗",label:"Links"}];
+const RESOURCE_MAP=BOOK.resources;
+const SDEFS_STD=[{key:"opening",label:"Opening Line",lim:25,ital:true,src:"s"},{key:"p0",label:"P1 — Hook",lim:40,src:"p"},{key:"p1",label:"P2 — Waggy Exp.",lim:40,src:"p"},{key:"enc1",label:"Encourage 1",lim:13,ital:true,src:"s"},{key:"p2",label:"P3 — Info",lim:48,src:"p"},{key:"quote",label:"Bottom Quote",lim:20,ital:true,src:"s"},{key:"p3",label:"P4 — Reassurance",lim:55,src:"p"},{key:"enc2",label:"Encourage 2",lim:13,ital:true,src:"s"},{key:"p4",label:"P5 — Practical",lim:55,src:"p"},{key:"tip",label:"Expert Tip",lim:30,ital:true,src:"s"}];
+const SDEFS_WELCOME=[{key:"p0",label:"P1",lim:120,src:"p"},{key:"p1",label:"P2",lim:120,src:"p"},{key:"p2",label:"P3",lim:120,src:"p"}];
+const SDEFS=SDEFS_STD;
+
+function chk(t){if(!t)return[];const l=t.toLowerCase();return ACK.filter(c=>c.patterns.some(p=>l.includes(p))).map(c=>({...c,found:c.patterns.find(p=>l.includes(p))}));}
+const wc=t=>t?t.trim().split(/\s+/).filter(Boolean).length:0;
+function badge(t,lim){if(!lim)return null;const n=wc(t),p=n/lim;return{n,lim,color:p>1?"#EF4444":p>0.85?"#F97316":"#10B981",bg:p>1?"#FEF2F2":p>0.85?"#FFF7ED":"#ECFDF5"};}
+function parseSlots(text){
+  const labels=[{key:"opening",p:["OPENING LINE","OPENING"]},{key:"p1",p:["P1"]},{key:"p2",p:["P2"]},{key:"enc1",p:["ENCOURAGE 1","ENC 1","ENCOURAGE1","ENCOURAGE:"]},{key:"p3",p:["P3"]},{key:"quote",p:["BOTTOM QUOTE","QUOTE"]},{key:"p4",p:["P4"]},{key:"enc2",p:["ENCOURAGE 2","ENC 2","ENCOURAGE2"]},{key:"p5",p:["P5"]},{key:"tip",p:["EXPERT TIP","TIP"]}];
+  const skipLines=[...Object.keys(BOOK.sections).map(s=>s.toUpperCase()),"GETTING STARTED TOGETHER","BEFORE THE STAY","WHAT TO EXPECT","PEACE OF MIND","SECTION 1","SECTION 2","SECTION 3","SECTION 4"];
+  const res={};const lines=text.split("\n");let cur=null,buf=[];
+  const flush=()=>{if(cur)res[cur]=buf.join("\n").trim();};
+  for(const line of lines){const up=line.trim().toUpperCase().replace(/:$/,"");if(skipLines.includes(up))continue;const m=labels.find(l=>l.p.some(p=>up===p||up.startsWith(p+" ")||up.startsWith(p+":")));if(m){flush();cur=m.key;buf=[];}else if(cur)buf.push(line);}
+  flush();labels.forEach(l=>{if(!res[l.key])res[l.key]="";});return res;
+}
+function slots2ch(parsed){const p=[parsed.p1,parsed.p2,parsed.p3,parsed.p4,parsed.p5].filter(v=>v);const s={opening:parsed.opening||"",p2:parsed.p2||"",encourage1:parsed.enc1||"",encourage2:parsed.enc2||"",tip:parsed.tip||"",quote:parsed.quote||""};return{p,s};}
+function Pill({n,color}){return <div style={{width:24,height:24,borderRadius:"50%",background:color,color:"#FDF8F0",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:"bold",flexShrink:0,fontFamily:"sans-serif"}}>{n}</div>;}
+function Bdg({t,lim}){const b=badge(t,lim);if(!b)return null;return <span style={{fontSize:9,fontFamily:"sans-serif",fontWeight:"bold",color:b.color,background:b.bg,border:`1px solid ${b.color}`,borderRadius:20,padding:"1px 5px"}}>{b.n}/{b.lim}</span>;}
+
+function Dash(){
+  const[tab,setTab]=useState("tracker");const[pdfCopied,setPdfCopied]=useState(null);
+  const[waggy,setWaggy]=useState(false);
+  const[chs,setChs]=useState(INIT);
+  const[exp,setExp]=useState(null);
+  const[tFilt,setTFilt]=useState("all");
+  const[stab,setStab]=useState({});
+  const[aExp,setAExp]=useState(null);
+  const[aFilt,setAFilt]=useState("all");
+  const[gCh,setGCh]=useState(7);
+  const[gChecks,setGChecks]=useState({});
+  const[gTab,setGTab]=useState("list");
+  const[scanTxt,setScanTxt]=useState("");
+  const[scanRes,setScanRes]=useState(null);
+  const[lCh,setLCh]=useState(6);
+  const[rCh,setRCh]=useState(7);
+  const[cView,setCView]=useState("para");
+  const[soCh,setSoCh]=useState(7);
+  const[editCh,setEditCh]=useState(7);
+  const[editKey,setEditKey]=useState("p0");
+  const[editTxt,setEditTxt]=useState("");
+  const[editSaved,setEditSaved]=useState(false);
+  const[inlE,setInlE]=useState(null);
+  const[inlTxt,setInlTxt]=useState("");
+  const[authPanel,setAuthPanel]=useState(null);
+  const[paste,setPaste]=useState({});
+  const[wcE,setWcE]=useState([]);
+  const[wcIn,setWcIn]=useState("");
+  const[wcCat,setWcCat]=useState("General");
+  const[wcSearch,setWcSearch]=useState("");
+  const[wcFilt,setWcFilt]=useState("All");
+  const[wcScan,setWcScan]=useState(null);
+  const[draft,setDraft]=useState({});
+  const[arch,setArch]=useState([]);
+  const[doneOpen,setDoneOpen]=useState(false);
+  const[showImp,setShowImp]=useState(false);
+  const[impTxt,setImpTxt]=useState("");
+  const[impErr,setImpErr]=useState("");
+  const[banner,setBanner]=useState(null);
+  const[master,setMaster]=useState("");
+  const[approved,setApproved]=useState(null);
+  const[olEditCh,setOlEditCh]=useState(null);
+  const[olEditTxt,setOlEditTxt]=useState("");
+  const loaded=useRef(false);
+  const saveTimer=useRef(null);
+
+  const[saveErr,setSaveErr]=useState(false);
+  const save=async(nc,gc,ar)=>{try{await window.storage.set(BOOK.storageKey,JSON.stringify({chs:nc,gChecks:gc??gChecks,archived:ar??arch,v:"wr1"}));setSaveErr(false);}catch(e){setSaveErr(true);}};
+  const saveInl=()=>{if(!inlE)return;let nc;if(inlE.src==="s"){const sk={enc1:"encourage1",enc2:"encourage2"}[inlE.key]||inlE.key;nc=chs.map(c=>c.num===inlE.cn?{...c,s:{...c.s,[sk]:inlTxt}}:c);}else{const i=parseInt(inlE.key.slice(1));nc=chs.map(c=>{if(c.num!==inlE.cn)return c;const np=[...c.p];np[i]=inlTxt;return{...c,p:np};});}setChs(nc);save(nc);setInlE(null);setInlTxt("");};
+  const buildMaster=(nc,gc,ar)=>{const d=JSON.stringify({chs:nc,gChecks:gc??gChecks,archived:ar??arch,v:"wr1"});setMaster(d);navigator.clipboard?.writeText(d).catch(()=>{});return d;};
+  const approve=(num)=>{const na=!arch.includes(num)?[...arch,num]:arch;setArch(na);buildMaster(chs,gChecks,na);setApproved(num);save(chs,gChecks,na);setTab("tracker");};
+  const doImport=()=>{try{const d=JSON.parse(impTxt.trim());if(!d.chs||!Array.isArray(d.chs))throw new Error();setChs(d.chs);if(d.gChecks)setGChecks(d.gChecks);const ar=d.archived||[];setArch(ar);setShowImp(false);setImpTxt("");setImpErr("");setBanner("restored");save(d.chs,d.gChecks||{},ar);buildMaster(d.chs,d.gChecks||{},ar);}catch(e){setImpErr("Invalid data — copy again.");}};
+
+  useEffect(()=>{const load=async()=>{try{const r=await window.storage.get(BOOK.storageKey);if(r){const d=JSON.parse(r.value);if(d.chs&&Array.isArray(d.chs)&&d.chs.length>0){setChs(d.chs);if(d.gChecks)setGChecks(d.gChecks);if(d.archived)setArch(d.archived||[]);setBanner("restored");}else{setChs(SEED);setBanner("seeded");await window.storage.set(BOOK.storageKey,JSON.stringify({chs:SEED,gChecks:{},archived:[],v:"wr1"}));}}else{setChs(SEED);setBanner("seeded");await window.storage.set(BOOK.storageKey,JSON.stringify({chs:SEED,gChecks:{},archived:[],v:"wr1"}));}}catch(e){setChs(SEED);setBanner("seeded");}try{const r=await window.storage.get(BOOK.storageKey+"-wc");if(r)setWcE(JSON.parse(r.value));}catch(e){}try{const r=await window.storage.get(BOOK.storageKey+"-pt");if(r)setPaste(JSON.parse(r.value));}catch(e){}loaded.current=true;};load();},[]);
+  useEffect(()=>{if(!loaded.current)return;save(chs,gChecks,arch);},[chs,gChecks,arch]);
+  useEffect(()=>{window.storage.set(BOOK.storageKey+"-wc",JSON.stringify(wcE)).catch(()=>{});},[wcE]);
+  useEffect(()=>{window.storage.set(BOOK.storageKey+"-pt",JSON.stringify(paste)).catch(()=>{});},[paste]);
+  useEffect(()=>{const ch=chs.find(c=>c.num===editCh);if(!ch)return;if(editKey.startsWith("p")){const i=parseInt(editKey.slice(1));setEditTxt(ch.p?.[i]||"");}else setEditTxt(ch.s?.[editKey.slice(2)]||"");setEditSaved(false);},[editCh,editKey]);
+
+  const loadCh=(num,text)=>{let p,s;if(BOOK.welcomeChs.includes(num)){const paras=text.split(/\n\s*\n/).map(t=>t.replace(/^P[123]:\s*/i,"").trim()).filter(Boolean);p=paras;s={opening:"",p2:paras[1]||"",encourage1:"",encourage2:"",tip:"",quote:""};}else{const parsed=parseSlots(text);const r=slots2ch(parsed);p=r.p;s=r.s;}const nc=chs.map(c=>c.num===num?{...c,p,s,status:"completed"}:c);setChs(nc);setSoCh(num);setStab(prev=>({...prev,[num]:"slots"}));const all={...s,p1:p[0]||"",p3:p[2]||"",p4:p[3]||"",p5:p[4]||""};const iss=[];Object.entries(all).forEach(([sk,v])=>{if(!v)return;chk(v).forEach(i=>iss.push({slot:(SL[sk]||sk),...i}));});setAuthPanel({num,iss,clean:iss.length===0});setExp(num);};
+
+  const tc={done:chs.filter(c=>c.status==="completed").length,pend:chs.filter(c=>c.status==="pending").length};
+  const tFil=chs.filter(c=>tFilt==="completed"?c.status==="completed":tFilt==="pending"?c.status==="pending":true);
+  const aData=chs.map(c=>{const r={};let tot=0;Object.entries(c.s).forEach(([k,v])=>{const i=chk(v);r[k]=i;tot+=i.length;});(c.p||[]).forEach((v,i)=>{const k=`p${i}`;const iss=chk(v);r[k]=iss;tot+=iss.length;});return{c,r,tot};});
+  const aC=aData.filter(d=>d.tot===0).length,aF=aData.filter(d=>d.tot>0).length;
+  const aFil=aData.filter(d=>aFilt==="clean"?d.tot===0:aFilt==="flagged"?d.tot>0:true);
+  const ol=chs.map(c=>({num:c.num,title:c.title,section:c.section,line:c.s.opening,fw:c.s.opening?.split(/[\s—]/)[0]?.replace(/[^a-zA-Z0-9]/,"")||""}));
+  const olV=[];for(let i=0;i<ol.length-1;i++){if(ol[i].fw.toLowerCase()===ol[i+1].fw.toLowerCase()&&ol[i].fw)olV.push({chs:[ol[i].num,ol[i+1].num],word:ol[i].fw});}
+  const lD=chs.find(c=>c.num===lCh),rD=chs.find(c=>c.num===rCh);
+  const p2Sim=lD&&rD&&lD.s.p2?.split(" ").slice(0,3).join(" ").toLowerCase()===rD.s.p2?.split(" ").slice(0,3).join(" ").toLowerCase()&&lD.s.p2;
+  const gDone=Object.values(gChecks).filter(v=>v===gCh).length;
+  const wcFil=wcE.filter(e=>{const mc=wcFilt==="All"||e.cat===wcFilt;const ms=!wcSearch||e.text.toLowerCase().includes(wcSearch.toLowerCase());return mc&&ms;});
+  const activeTab=waggy?"waggy":tab;
+  const TL={tracker:"Tracker",auth:"Auth",compare:"Compare",openings:"Openings",signoff:"Sign-Off",edit:"Edit",links:"Links",waggy:"Waggy Content"};
+
+  // shared style helpers
+  const btn=(bg,fg,extra={})=>({background:bg,color:fg,border:"none",cursor:"pointer",fontFamily:"sans-serif",...extra});
+  const card=(border="#E2D0BC",bg="#fff")=>({border:`1.5px solid ${border}`,borderRadius:7,overflow:"hidden",background:bg});
+
+  return(
+  <div style={{display:"flex",fontFamily:"Georgia,serif",background:"#FDF8F0",minHeight:"100vh"}}>
+
+    {/* RAIL */}
+    <div style={{width:68,background:"#3D2010",display:"flex",flexDirection:"column",alignItems:"center",paddingTop:10,paddingBottom:10,flexShrink:0,position:"sticky",top:0,height:"100vh",overflowY:"auto"}}>
+      <div style={{width:34,height:34,borderRadius:8,background:"#C8860A",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:14,flexShrink:0}}><span style={{fontSize:14,color:"#FDF8F0",fontWeight:"bold",fontFamily:"sans-serif"}}>W</span></div>
+      <div style={{display:"flex",flexDirection:"column",gap:2,width:"100%",alignItems:"center",flex:1}}>
+        {NAV.map(n=>{const a=!waggy&&tab===n.id;
+          const tabFlags={
+            auth: aF>0,
+            openings: olV.length>0||ol.some(l=>chk(l.line).length>0),
+            compare: !!p2Sim,
+            edit: !!(wcScan&&wcScan.length>0),
+            links: RESOURCE_MAP.some(r=>{const ch=chs.find(c=>c.num===r.ch);if(!ch)return false;const all=[...(ch.p||[]),ch.s?.opening||"",ch.s?.encourage1||"",ch.s?.encourage2||"",ch.s?.quote||"",ch.s?.tip||""].join(" ");return ch.status==="completed"&&!all.includes(r.phrase);}),
+          };
+          const hasFlag=tabFlags[n.id]||false;
+          return(
+          <button key={n.id} onClick={()=>{setTab(n.id);setWaggy(false);}} style={{width:60,height:50,borderRadius:9,background:a?"#C8860A":"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,position:"relative"}}>
+            {hasFlag&&!a&&<span style={{position:"absolute",top:6,right:9,width:7,height:7,borderRadius:"50%",background:"#EF4444",border:"1.5px solid #3D2010",display:"block"}}/>}
+            <span style={{fontSize:16,lineHeight:1}}>{n.icon}</span>
+            <span style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color:a?"#FDF8F0":"#B8957A",textTransform:"uppercase"}}>{n.label}</span>
+          </button>
+        );})}
+      </div>
+      <div style={{borderTop:"1px solid #5C3D20",paddingTop:8,marginTop:4,width:"100%",display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <button onClick={()=>setWaggy(v=>!v)} style={{width:60,height:50,borderRadius:9,background:waggy?"#C8860A":"transparent",border:"none",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2}}>
+          <span style={{fontSize:16,lineHeight:1}}>🎙</span>
+          <span style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color:waggy?"#FDF8F0":"#B8957A",textTransform:"uppercase"}}>Waggy</span>
+        </button>
+        <div style={{fontSize:7,color:"#5C3020",fontFamily:"sans-serif",marginTop:4}}>v127</div>
+      </div>
+    </div>
+
+    {/* MAIN */}
+    <div style={{flex:1,padding:"10px 8px",minWidth:0,overflowY:"auto"}}>
+    <div style={{maxWidth:600,margin:"0 auto"}}>
+
+      {/* HEADER */}
+      <div style={{background:"#7A4A30",borderRadius:10,padding:"9px 13px",marginBottom:8}}>
+        <div style={{color:"#C8860A",fontSize:8,letterSpacing:3,fontFamily:"sans-serif",textTransform:"uppercase",marginBottom:1}}>{BOOK.title} · Book {BOOK.num}</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <h1 style={{color:"#FDF8F0",fontSize:15,fontWeight:"bold",margin:0}}>{TL[activeTab]}</h1>
+          <div style={{display:"flex",alignItems:"center",gap:5}}>
+            <button onClick={()=>setShowImp(v=>!v)} style={{...btn("#5C3010","#C4A882"),borderRadius:5,padding:"3px 7px",fontSize:9}}>Import</button>
+            <div style={{color:"#C4A882",fontSize:10,fontFamily:"sans-serif"}}>{tc.done}/{BOOK.totalChs}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* BANNERS */}
+      {banner==="restored"&&<div style={{background:"#ECFDF5",border:"1.5px solid #A7F3D0",borderRadius:8,padding:"8px 12px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><div style={{fontSize:10,fontWeight:"bold",color:"#065F46",fontFamily:"sans-serif"}}>✓ Session restored — {chs.filter(c=>c.status==="completed").length} chapter{chs.filter(c=>c.status==="completed").length!==1?"s":""} completed</div><div style={{fontSize:9,color:"#10B981",fontFamily:"sans-serif",marginTop:1}}>Your data carried over automatically.</div></div>
+        <button onClick={()=>setBanner(null)} style={{...btn("none","#10B981"),fontSize:13}}>✕</button>
+      </div>}
+      {banner==="fresh"&&<div style={{background:"#FFF8EE",border:"1.5px solid #F0C070",borderRadius:8,padding:"8px 12px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div><div style={{fontSize:10,fontWeight:"bold",color:"#7A4A30",fontFamily:"sans-serif"}}>Fresh session — no stored data found</div><div style={{fontSize:9,color:"#9B6B4E",fontFamily:"sans-serif",marginTop:1}}>Use Import to paste your master JSON and restore.</div></div>
+        <button onClick={()=>setBanner(null)} style={{...btn("none","#C8860A"),fontSize:13}}>✕</button>
+      </div>}
+      {banner==="seeded"&&<div style={{background:"#FFF8EE",border:"1.5px solid #F0C070",borderRadius:8,padding:"8px 12px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:10,fontWeight:"bold",color:"#7A4A30",fontFamily:"sans-serif"}}>Fresh session — no stored data found</div><div style={{fontSize:9,color:"#9B6B4E",fontFamily:"sans-serif",marginTop:1}}>Use Import to paste your master JSON and restore all chapters.</div></div><button onClick={()=>setBanner(null)} style={{...btn("none","#C8860A"),fontSize:13}}>✕</button></div>}
+      {saveErr&&<div style={{background:"#FEF2F2",border:"1.5px solid #EF4444",borderRadius:8,padding:"8px 12px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:10,fontWeight:"bold",color:"#991B1B",fontFamily:"sans-serif"}}>⚠ Storage write failed — data will not persist</div><div style={{fontSize:9,color:"#EF4444",fontFamily:"sans-serif",marginTop:1}}>Use 💾 Save & Export JSON and keep the JSON safe after every session.</div></div><button onClick={()=>setSaveErr(false)} style={{...btn("none","#EF4444"),fontSize:13}}>✕</button></div>}
+      {banner==="saved"&&<div style={{background:"#ECFDF5",border:"1.5px solid #A7F3D0",borderRadius:8,padding:"8px 12px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontSize:10,fontWeight:"bold",color:"#065F46",fontFamily:"sans-serif"}}>✓ JSON exported — copy from the box below</div><div style={{fontSize:9,color:"#10B981",fontFamily:"sans-serif",marginTop:1}}>Also copied to clipboard.</div></div><button onClick={()=>setBanner(null)} style={{...btn("none","#10B981"),fontSize:13}}>✕</button></div>}
+
+      {/* APPROVED */}
+      {approved&&<div style={{background:"#0D2A1A",border:"2px solid #10B981",borderRadius:8,padding:"10px 12px",marginBottom:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:6}}>
+          <div><div style={{fontSize:11,fontWeight:"bold",color:"#10B981",fontFamily:"sans-serif",marginBottom:2}}>✅ Ch{approved} approved — master JSON updated</div><div style={{fontSize:9,color:"#6EE7B7",fontFamily:"sans-serif"}}>Copied to clipboard. Paste to Notes or email now.</div></div>
+          <button onClick={()=>setApproved(null)} style={{...btn("none","#10B981"),fontSize:13,flexShrink:0}}>✕</button>
+        </div>
+        <textarea value={master} readOnly onFocus={e=>e.target.select()} rows={2} style={{width:"100%",border:"1px solid #10B981",borderRadius:5,padding:"5px 7px",fontSize:9,fontFamily:"monospace",color:"#6EE7B7",background:"#061A0E",resize:"none",boxSizing:"border-box",wordBreak:"break-all"}}/>
+        <button onClick={()=>navigator.clipboard?.writeText(master).catch(()=>{})} style={{...btn("#10B981","#fff"),marginTop:5,borderRadius:5,padding:"4px 12px",fontSize:9,fontWeight:"bold"}}>Copy again</button>
+      </div>}
+
+      {/* PERSISTENT MASTER */}
+      {master&&!approved&&<div style={{background:"#0D1A0D",border:"1px solid #2D5A3D",borderRadius:7,padding:"7px 10px",marginBottom:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+          <div style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color:"#6EE7B7",textTransform:"uppercase",letterSpacing:1}}>Master JSON — last approved</div>
+          <div style={{display:"flex",gap:5}}>
+            <button onClick={()=>navigator.clipboard?.writeText(master).catch(()=>{})} style={{...btn("#10B981","#fff"),borderRadius:4,padding:"2px 8px",fontSize:8,fontWeight:"bold"}}>Copy</button>
+            <button onClick={()=>setMaster("")} style={{...btn("none","#6EE7B7"),fontSize:12}}>✕</button>
+          </div>
+        </div>
+        <textarea value={master} readOnly onFocus={e=>e.target.select()} rows={2} style={{width:"100%",border:"1px solid #2D5A3D",borderRadius:4,padding:"4px 6px",fontSize:8,fontFamily:"monospace",color:"#6EE7B7",background:"#061A0E",resize:"none",boxSizing:"border-box",wordBreak:"break-all"}}/>
+      </div>}
+
+      {/* IMPORT */}
+      {showImp&&<div style={{background:"#3D2010",borderRadius:8,padding:"9px 11px",marginBottom:8}}>
+        <div style={{fontSize:9,fontFamily:"sans-serif",fontWeight:"bold",color:"#C8860A",marginBottom:5}}>Paste master JSON to restore</div>
+        <textarea value={impTxt} onChange={e=>{setImpTxt(e.target.value);setImpErr("");}} placeholder="Paste your saved JSON here..." style={{width:"100%",minHeight:55,border:"1.5px solid #C8860A",borderRadius:5,padding:"6px 8px",fontSize:9,fontFamily:"monospace",color:"#FDF8F0",background:"#2A1508",resize:"vertical",boxSizing:"border-box"}}/>
+        {impErr&&<div style={{fontSize:9,color:"#EF4444",marginTop:3}}>{impErr}</div>}
+        <div style={{display:"flex",gap:5,marginTop:6}}>
+          <button onClick={()=>{setShowImp(false);setImpTxt("");setImpErr("");}} style={{...btn("#5C3010","#C4A882"),flex:1,borderRadius:5,padding:"6px 0",fontSize:10}}>Cancel</button>
+          <button onClick={doImport} disabled={!impTxt.trim()} style={{...btn(impTxt.trim()?"#C8860A":"#5C3010","#FDF8F0"),flex:2,borderRadius:5,padding:"6px 0",fontSize:10,fontWeight:"bold",cursor:impTxt.trim()?"pointer":"default"}}>Restore</button>
+        </div>
+      </div>}
+      <div style={{marginBottom:8}}>
+        <div style={{display:"flex",gap:5}}>
+          <button onClick={()=>{setChs(prev=>{const d=JSON.stringify({chs:prev,gChecks,archived:arch,v:"wr1"});setMaster(d);save(prev,gChecks,arch);return prev;});}} style={{...btn("#1A6B3A","#FDF8F0"),flex:2,borderRadius:5,padding:"7px 0",fontSize:10,fontWeight:"bold"}}>💾 Save</button>
+          {master&&<button onClick={()=>{const el=document.getElementById('master-json-out');if(el){el.select();el.setSelectionRange(0,99999);try{document.execCommand('copy');}catch(e){}}try{navigator.clipboard?.writeText(master);}catch(e){}}} style={{...btn("#065F46","#FDF8F0"),flex:1,borderRadius:5,padding:"7px 0",fontSize:10,fontWeight:"bold"}}>Copy</button>}
+        </div>
+        {master&&<textarea id="master-json-out" readOnly value={master} rows={4} style={{width:"100%",marginTop:5,border:"2px solid #1A6B3A",borderRadius:5,padding:"6px 8px",fontSize:8,fontFamily:"monospace",color:"#FDF8F0",background:"#0D3320",resize:"vertical",boxSizing:"border-box",wordBreak:"break-all"}} onFocus={e=>{e.target.select();e.target.setSelectionRange(0,99999);}}/>}
+      </div>
+
+      {/* ═══ TRACKER ═══ */}
+      {activeTab==="tracker"&&<div>
+        {authPanel&&<div style={{marginBottom:10,border:`2px solid ${authPanel.clean?"#10B981":"#EF4444"}`,borderRadius:10,overflow:"hidden",background:authPanel.clean?"#ECFDF5":"#FFF5F5"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 11px"}}>
+            <div style={{fontSize:11,fontWeight:"bold",color:authPanel.clean?"#065F46":"#EF4444",fontFamily:"sans-serif"}}>{authPanel.clean?`✓ Ch${authPanel.num} — clean`:`⚠ Ch${authPanel.num} — ${authPanel.iss.length} violation${authPanel.iss.length!==1?"s":""}`}</div>
+            <button onClick={()=>setAuthPanel(null)} style={{...btn("none","#9B7B5E"),fontSize:13}}>✕</button>
+          </div>
+          {authPanel.iss.length>0&&<div style={{padding:"0 11px 9px",display:"flex",flexDirection:"column",gap:4}}>{authPanel.iss.map((i,idx)=><div key={idx} style={{borderLeft:"3px solid #EF4444",paddingLeft:7,fontSize:9,fontFamily:"sans-serif"}}><span style={{fontWeight:"bold",color:"#EF4444"}}>{i.slot}: "{i.found}"</span> — {i.fix}</div>)}</div>}
+        </div>}
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:5,marginBottom:8}}>
+          {[{k:"all",c:"#7A4A30",l:"#FDF8F0",n:BOOK.totalChs,label:"All"},{k:"completed",c:"#10B981",l:"#ECFDF5",n:tc.done,label:"Done"},{k:"pending",c:"#F97316",l:"#FFF7ED",n:tc.pend,label:"Pending"}].map(({k,c,l,n,label})=>(
+            <button key={k} onClick={()=>setTFilt(tFilt===k?"all":k)} style={{background:tFilt===k?c:l,border:`2px solid ${c}`,borderRadius:7,padding:"6px 4px",cursor:"pointer",textAlign:"center"}}>
+              <div style={{fontSize:17,fontWeight:"bold",color:tFilt===k?"#fff":c}}>{n}</div>
+              <div style={{fontSize:8,color:tFilt===k?"#fff":"#7A4A30",fontFamily:"sans-serif",textTransform:"uppercase",letterSpacing:1}}>{label}</div>
+            </button>
+          ))}
+        </div>
+
+        {arch.length>0&&<div style={{border:"1.5px solid #A7F3D0",borderRadius:7,overflow:"hidden",marginBottom:5}}>
+          <button onClick={()=>setDoneOpen(v=>!v)} style={{width:"100%",background:"#ECFDF5",border:"none",padding:"8px 11px",cursor:"pointer",display:"flex",alignItems:"center",gap:7,textAlign:"left"}}>
+            <span>✅</span><span style={{fontSize:11,fontWeight:"bold",color:"#065F46",fontFamily:"sans-serif",flex:1}}>PDF Done — {arch.length} chapter{arch.length!==1?"s":""}</span>
+            <span style={{fontSize:10,color:"#10B981"}}>{doneOpen?"▲":"▼"}</span>
+          </button>
+          {doneOpen&&<div style={{borderTop:"1px solid #A7F3D0",padding:"6px 9px",display:"flex",flexDirection:"column",gap:3}}>
+            {chs.filter(c=>arch.includes(c.num)).map(c=><div key={c.num} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 6px",background:"#F0FDF4",borderRadius:4}}>
+              <Pill n={c.num} color={SC[c.section]}/><span style={{fontSize:10,color:"#065F46",flex:1}}>{c.title}</span><span style={{fontSize:9,fontFamily:"sans-serif",color:"#10B981",fontWeight:"bold"}}>PDF ✓</span>
+            </div>)}
+          </div>}
+        </div>}
+
+        <div style={{display:"flex",flexDirection:"column",gap:3}}>
+          {tFil.filter(ch=>!arch.includes(ch.num)).map(ch=>{
+            const chI=[...Object.values(ch.s),...(ch.p||[])].reduce((a,v)=>a+chk(v).length,0);
+            const wcOver=ch.status==="completed"&&!BOOK.welcomeChs.includes(ch.num)&&(()=>{
+              const lims={opening:25,encourage1:18,encourage2:18,tip:30,quote:20};
+              const pLims=[55,55,60,55,55];
+              const sOver=Object.entries(lims).some(([k,l])=>wc(ch.s[k])>=l);
+              const pOver=ch.p.some((t,i)=>wc(t)>(pLims[i]||55));
+              return sOver||pOver;
+            })();
+            const needsReview=ch.status==="completed"&&(chI>0||wcOver);
+            const cfg=needsReview?SCFG.review:SCFG[ch.status]||SCFG.pending;
+            const isO=exp===ch.num;const st=stab[ch.num]||"body";const color=SC[ch.section];
+            const empty=ch.p.length===0;
+            return <div key={ch.num} style={{...card(isO?"#C8860A":"#E2D0BC")}}>
+              <button onClick={()=>setExp(isO?null:ch.num)} style={{width:"100%",...btn("none",""),padding:"8px 10px",cursor:"pointer",display:"flex",alignItems:"center",gap:6,textAlign:"left"}}>
+                <Pill n={ch.num} color={color}/>
+                <div style={{flex:1,minWidth:0,fontSize:11,fontWeight:"bold",color:"#3D2010",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:"#9B6B4E",marginRight:4}}>Ch{ch.num}</span>{ch.title}</div>
+                {chI>0&&<span style={{fontSize:9,color:"#EF4444",fontFamily:"sans-serif",fontWeight:"bold"}}>⚠{chI}</span>}
+                <div style={{width:6,height:6,borderRadius:"50%",background:cfg.dot,flexShrink:0}}/>
+                <span style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color:cfg.text,textTransform:"uppercase"}}>{cfg.label}</span>
+                <span style={{color:"#C8860A",fontSize:10,transform:isO?"rotate(180deg)":"none"}}>▾</span>
+              </button>
+              {isO&&<div style={{borderTop:"1px solid #EAD9C4"}}>
+                {empty?<div style={{padding:"10px"}}>
+                  <div style={{fontSize:9,fontFamily:"sans-serif",fontWeight:"bold",color:"#9B7B5E",textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Paste chapter — Ch{ch.num}</div>
+                  <textarea value={paste[ch.num]||""} onChange={e=>setPaste(prev=>({...prev,[ch.num]:e.target.value}))} placeholder={BOOK.welcomeChs.includes(ch.num)?"Paragraph 1\n\nParagraph 2\n\nParagraph 3":"OPENING LINE:\nP1:\nP2:\nENCOURAGE 1:\nP3:\nBOTTOM QUOTE:\nP4:\nENCOURAGE 2:\nP5:\nEXPERT TIP:"} style={{width:"100%",minHeight:85,border:"1.5px solid #C8860A",borderRadius:6,padding:"7px 9px",fontSize:11,fontFamily:"Georgia,serif",color:"#3D2010",background:"#fff",resize:"vertical",boxSizing:"border-box",lineHeight:1.6}}/>
+                  <button onClick={()=>{if((paste[ch.num]||"").trim())loadCh(ch.num,paste[ch.num]);}} disabled={!(paste[ch.num]||"").trim()} style={{...btn((paste[ch.num]||"").trim()?"#7A4A30":"#EAD9C4",(paste[ch.num]||"").trim()?"#FDF8F0":"#9B7B5E"),marginTop:6,width:"100%",borderRadius:6,padding:"9px 0",fontSize:11,fontWeight:"bold",cursor:(paste[ch.num]||"").trim()?"pointer":"default"}}>Load Chapter</button>
+                </div>:<div>
+                  <div style={{display:"flex",borderBottom:"1px solid #EAD9C4"}}>
+                    {[["body","Body"],["slots","Slots"]].map(([t,lbl])=><button key={t} onClick={()=>setStab(p=>({...p,[ch.num]:t}))} style={{flex:1,...btn(st===t?"#FDF8F0":"#FFF8EE",""),border:"none",borderBottom:st===t?"2px solid #C8860A":"2px solid transparent",padding:"5px 0",fontSize:10,fontFamily:"sans-serif",fontWeight:st===t?"bold":"normal",color:st===t?"#7A4A30":"#9B7B5E",cursor:"pointer"}}>{lbl}</button>)}
+                    <button onClick={()=>{setChs(prev=>{const nc=prev.map(c=>c.num===ch.num?{...c,p:[],s:{...S0},status:"pending"}:c);save(nc,gChecks,arch);return nc;});setPaste(prev=>({...prev,[ch.num]:""}));}} style={{...btn("#FFF0E8","#C8860A"),border:"1px solid #C8860A",borderRadius:4,padding:"4px 10px",fontSize:9,fontFamily:"sans-serif",fontWeight:"bold",cursor:"pointer"}}>Clear Chapter</button>
+                  </div>
+                  {st==="body"&&<div style={{padding:"8px 10px",display:"flex",flexDirection:"column",gap:6}}>
+                    {(BOOK.welcomeChs.includes(ch.num)?SDEFS_WELCOME:SDEFS_STD).map(sl=>{const isEd=inlE&&inlE.cn===ch.num&&inlE.key===sl.key;const getRaw=()=>{if(sl.src==="s"){const sk={enc1:"encourage1",enc2:"encourage2"}[sl.key]||sl.key;return ch.s[sk]||"";}return ch.p[parseInt(sl.key.slice(1))]||"";};const raw=getRaw();const live=isEd?inlTxt:raw;const iss=chk(live);const empty=!raw;
+                    const clearSlot=()=>{setChs(prev=>{let nc;if(sl.src==="s"){const sk={enc1:"encourage1",enc2:"encourage2"}[sl.key]||sl.key;nc=prev.map(c=>c.num===ch.num?{...c,s:{...c.s,[sk]:""}}:c);}else{const i=parseInt(sl.key.slice(1));nc=prev.map(c=>{if(c.num!==ch.num)return c;const np=[...c.p];np[i]="";return{...c,p:np};});}save(nc,gChecks,arch);return nc;});};
+                    return <div key={sl.key} style={{borderLeft:`3px solid ${iss.length>0?"#EF4444":empty?"#E0D0BC":"#C8860A"}`,paddingLeft:8,paddingTop:4,paddingBottom:4,background:isEd?"#FFFBF0":iss.length>0?"#FFF5F5":"transparent",borderRadius:"0 4px 4px 0"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+                          <span style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color:iss.length>0?"#EF4444":empty?"#C4A882":"#C8860A",textTransform:"uppercase"}}>{sl.label}</span>
+                          <div style={{display:"flex",alignItems:"center",gap:4}}><Bdg t={live} lim={sl.lim}/>{!isEd&&raw&&<button onClick={clearSlot} style={{background:"none",border:"1px solid #FECACA",borderRadius:3,padding:"1px 5px",fontSize:9,color:"#EF4444",cursor:"pointer",fontFamily:"sans-serif",lineHeight:1.4}}>✕</button>}{!isEd&&<button onClick={()=>{setInlE({cn:ch.num,key:sl.key,src:sl.src,lim:sl.lim,ital:!!sl.ital});setInlTxt(raw);}} style={{background:"none",border:"1px solid #C8860A",borderRadius:3,padding:"1px 5px",fontSize:9,color:"#C8860A",cursor:"pointer",fontFamily:"sans-serif",lineHeight:1.4}}>✏</button>}</div>
+                        </div>
+                        {isEd?<><textarea value={inlTxt} onChange={e=>{setInlTxt(e.target.value);if(saveTimer.current)clearTimeout(saveTimer.current);saveTimer.current=setTimeout(()=>{if(!inlE)return;let nc;if(inlE.src==="s"){const sk={enc1:"encourage1",enc2:"encourage2"}[inlE.key]||inlE.key;nc=chs.map(c=>c.num===inlE.cn?{...c,s:{...c.s,[sk]:e.target.value}}:c);}else{const i=parseInt(inlE.key.slice(1));nc=chs.map(c=>{if(c.num!==inlE.cn)return c;const np=[...c.p];np[i]=e.target.value;return{...c,p:np};});}setChs(nc);},800);}} autoFocus rows={sl.ital?2:3} style={{width:"100%",border:`1.5px solid ${iss.length>0?"#EF4444":"#C8860A"}`,borderRadius:5,padding:"6px 8px",fontSize:11,fontFamily:"Georgia,serif",fontStyle:sl.ital?"italic":"normal",color:"#3D2010",background:iss.length>0?"#FFF5F5":"#fff",resize:"vertical",boxSizing:"border-box",lineHeight:1.5}}/>{iss.map((x,ii)=><div key={ii} style={{fontSize:9,color:"#EF4444",borderLeft:"2px solid #EF4444",paddingLeft:5,marginTop:1}}>{x.label}: "{x.found}" — {x.fix}</div>)}<div style={{display:"flex",gap:4,marginTop:5}}><button onClick={saveInl} style={{flex:2,background:"#7A4A30",color:"#FDF8F0",border:"none",borderRadius:5,padding:"6px 0",fontSize:10,fontWeight:"bold",cursor:"pointer",fontFamily:"sans-serif"}}>Save</button><button onClick={()=>{setInlE(null);setInlTxt("");}} style={{flex:1,background:"#F5EDE0",color:"#7A4A30",border:"1px solid #C4A882",borderRadius:5,padding:"6px 0",fontSize:10,cursor:"pointer",fontFamily:"sans-serif"}}>Cancel</button></div></> :<>{raw?<p style={{margin:"0 0 3px",fontSize:11,color:"#3D2010",lineHeight:1.5,fontStyle:sl.ital?"italic":"normal"}}>{raw}</p>:<p style={{margin:"0 0 3px",fontSize:10,color:"#C4A882",lineHeight:1.4,fontStyle:"italic"}}>— empty —</p>}{iss.map((x,ii)=><div key={ii} style={{fontSize:9,color:"#EF4444",borderLeft:"2px solid #EF4444",paddingLeft:5,marginBottom:1}}>{x.label}: "{x.found}" — {x.fix}</div>)}</>}
+                      </div>;})}
+                  </div>}
+                  {st==="slots"&&(()=>{
+                    const getV=(sl)=>{if(sl.src==="s"){const sk={enc1:"encourage1",enc2:"encourage2"}[sl.key]||sl.key;return ch.s[sk]||"";}return ch.p[parseInt(sl.key.slice(1))]||"";};
+                    const flushV=(sl,v)=>{setChs(prev=>{let nc;if(sl.src==="s"){const sk={enc1:"encourage1",enc2:"encourage2"}[sl.key]||sl.key;nc=prev.map(c=>c.num===ch.num?{...c,s:{...c.s,[sk]:v}}:c);}else{const i=parseInt(sl.key.slice(1));nc=prev.map(c=>{if(c.num!==ch.num)return c;const np=[...c.p];np[i]=v;return{...c,p:np};});}save(nc,gChecks,arch);return nc;});};
+                    return <div style={{padding:"8px 10px",display:"flex",flexDirection:"column",gap:6}}>
+                      {(BOOK.welcomeChs.includes(ch.num)?SDEFS_WELCOME:SDEFS_STD).map(sl=>{const dk=`${ch.num}-${sl.key}`;const txt=getV(sl);const iss=chk(txt);return <div key={sl.key}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+                          <span style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color:iss.length>0?"#EF4444":"#7A4A30",textTransform:"uppercase"}}>{sl.label}</span>
+                          <Bdg t={txt} lim={sl.lim}/>
+                        </div>
+                        <textarea value={txt} onChange={e=>{flushV(sl,e.target.value);}} rows={sl.ital?2:3} style={{width:"100%",border:`1.5px solid ${iss.length>0?"#EF4444":"#C8860A"}`,borderRadius:5,padding:"6px 8px",fontSize:11,fontFamily:"Georgia,serif",fontStyle:sl.ital?"italic":"normal",color:"#3D2010",background:iss.length>0?"#FFF5F5":"#fff",resize:"vertical",boxSizing:"border-box",lineHeight:1.5}}/>
+                        {iss.map((x,ii)=><div key={ii} style={{fontSize:9,color:"#EF4444",borderLeft:"2px solid #EF4444",paddingLeft:5,marginTop:1}}>{x.label}: "{x.found}" — {x.fix}</div>)}
+                      </div>;})}
+                    </div>;
+                  })()}
+                </div>}
+              <div style={{padding:"6px 10px 8px",borderTop:"1px solid #EAD9C4"}}>
+                <button onClick={()=>{const t=`build PDF ch${ch.num}`;navigator.clipboard?.writeText(t).catch(()=>{});setPdfCopied(ch.num);setTimeout(()=>setPdfCopied(null),1800);}} style={{background:"#C8860A",color:"#fff",border:"none",cursor:"pointer",width:"100%",borderRadius:6,padding:"7px 0",fontSize:10,fontWeight:"bold",fontFamily:"sans-serif",letterSpacing:0.3}}>{pdfCopied===ch.num?"✓ Copied!":"📄 Build PDF — Ch"+ch.num}</button>
+              </div>
+              </div>}
+            </div>;
+          })}
+        </div>
+        <div style={{marginTop:8,background:"#EAD9C4",borderRadius:3,overflow:"hidden",height:3}}><div style={{width:`${(arch.length/BOOK.totalChs)*100}%`,background:"#10B981",height:"100%"}}/></div>
+        <div style={{marginTop:3,textAlign:"center",color:"#9B7B5E",fontSize:9,fontFamily:"sans-serif"}}>{arch.length} PDF done · {BOOK.totalChs-arch.length} remaining</div>
+      </div>}
+
+      {/* ═══ AUTH ═══ */}
+      {activeTab==="auth"&&<div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:5,marginBottom:10}}>
+          {[{k:"all",c:"#7A4A30",l:"#FDF8F0",n:19,label:"All"},{k:"clean",c:"#10B981",l:"#ECFDF5",n:aC,label:"Clean"},{k:"flagged",c:"#EF4444",l:"#FEF2F2",n:aF,label:"Flagged"}].map(({k,c,l,n,label})=>(
+            <button key={k} onClick={()=>setAFilt(aFilt===k?"all":k)} style={{background:aFilt===k?c:l,border:`2px solid ${c}`,borderRadius:7,padding:"6px 4px",cursor:"pointer",textAlign:"center"}}>
+              <div style={{fontSize:17,fontWeight:"bold",color:aFilt===k?"#fff":c}}>{n}</div>
+              <div style={{fontSize:8,color:aFilt===k?"#fff":"#7A4A30",fontFamily:"sans-serif",textTransform:"uppercase",letterSpacing:1}}>{label}</div>
+            </button>
+          ))}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:3}}>
+          {aFil.map(({c:ch,r:res,tot})=>{const isO=aExp===ch.num;const ok=tot===0;const color=SC[ch.section];return <div key={ch.num} style={{...card(isO?"#C8860A":ok?"#A7F3D0":"#FECACA")}}>
+            <button onClick={()=>setAExp(isO?null:ch.num)} style={{width:"100%",background:ok?"#F0FDF4":"#FFF5F5",border:"none",padding:"8px 10px",cursor:"pointer",display:"flex",alignItems:"center",gap:6,textAlign:"left"}}>
+              <Pill n={ch.num} color={color}/>
+              <div style={{flex:1,minWidth:0,fontSize:11,fontWeight:"bold",color:"#3D2010",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{color:"#9B6B4E",marginRight:4}}>Ch{ch.num}</span>{ch.title}</div>
+              <span style={{fontSize:10,flexShrink:0,color:ok?"#10B981":"#EF4444",fontFamily:"sans-serif",fontWeight:"bold"}}>{ok?"✓ Clean":`⚠ ${tot}`}</span>
+              <span style={{color:"#C8860A",fontSize:10,transform:isO?"rotate(180deg)":"none"}}>▾</span>
+            </button>
+            {isO&&<div style={{borderTop:"1px solid #EAD9C4",padding:"8px 10px",display:"flex",flexDirection:"column",gap:6}}>
+              {Object.entries(res).map(([sk,iss])=>{const text=ch.s[sk];if(!text)return null;const ok2=iss.length===0;return <div key={sk} style={{border:`1.5px solid ${ok2?"#A7F3D0":"#FECACA"}`,borderRadius:6,padding:"7px 9px",background:ok2?"#F0FDF4":"#FFF5F5"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                  <span style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color:"#7A4A30",textTransform:"uppercase"}}>{SL[sk]}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}><Bdg t={text} lim={WL[sk]}/><span style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color:ok2?"#065F46":"#991B1B"}}>{ok2?"✓":"⚠ "+iss.length}</span></div>
+                </div>
+                <p style={{margin:"0 0 4px",fontSize:10,color:"#3D2010",lineHeight:1.5,fontStyle:"italic"}}>"{text}"</p>
+                {iss.map((x,ii)=><div key={ii} style={{borderLeft:"3px solid #EF4444",paddingLeft:6,marginBottom:3}}><div style={{fontSize:9,fontFamily:"sans-serif",fontWeight:"bold",color:"#EF4444"}}>{x.label} — "{x.found}"</div><div style={{fontSize:9,color:"#3D2010"}}>{x.fix}</div></div>)}
+              </div>;})}
+            </div>}
+          </div>;})}
+        </div>
+      </div>}
+
+      {/* ═══ COMPARE ═══ */}
+      {activeTab==="compare"&&<div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr auto 1fr",gap:6,alignItems:"center",marginBottom:8}}>
+          <select value={lCh} onChange={e=>setLCh(Number(e.target.value))} style={{border:"1.5px solid #C8860A",borderRadius:5,padding:"5px 6px",fontSize:10,fontFamily:"sans-serif",color:"#3D2010",background:"#fff"}}>{chs.map(c=><option key={c.num} value={c.num}>Ch{c.num}</option>)}</select>
+          <span style={{color:"#C8860A",fontSize:13}}>↔</span>
+          <select value={rCh} onChange={e=>setRCh(Number(e.target.value))} style={{border:"1.5px solid #C8860A",borderRadius:5,padding:"5px 6px",fontSize:10,fontFamily:"sans-serif",color:"#3D2010",background:"#fff"}}>{chs.map(c=><option key={c.num} value={c.num}>Ch{c.num}</option>)}</select>
+        </div>
+        {p2Sim&&<div style={{background:"#FEF2F2",border:"1.5px solid #EF4444",borderRadius:6,padding:"6px 10px",marginBottom:7,fontSize:10,fontFamily:"sans-serif",color:"#991B1B",fontWeight:"bold"}}>⚠ P2 opener violation — same opening words.</div>}
+        <div style={{display:"flex",gap:4,marginBottom:8}}>{[["para","Body"],["slots","Slots"],["open","Openings"]].map(([v,lbl])=><button key={v} onClick={()=>setCView(v)} style={{flex:1,...btn(cView===v?"#7A4A30":"#FFF8EE",cView===v?"#FDF8F0":"#7A4A30"),border:"1.5px solid #C8860A",borderRadius:20,padding:"3px 0",fontSize:10}}>{lbl}</button>)}</div>
+        {lD&&rD&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+          {[lD,rD].map(ch=>{const color=SC[ch.section];return <div key={ch.num} style={{display:"flex",flexDirection:"column",gap:4}}>
+            <div style={{background:color,borderRadius:5,padding:"4px 7px"}}><div style={{color:"rgba(255,255,255,0.6)",fontSize:8,fontFamily:"sans-serif"}}>Ch{ch.num}</div><div style={{color:"#FDF8F0",fontSize:10,fontWeight:"bold",lineHeight:1.3}}>{ch.title}</div></div>
+            {cView==="para"&&ch.p?.map((txt,i)=>{const sk=["p1","p2","p3","p4","p5"][i]||`p${i+1}`;const iss=chk(txt);return <div key={i} style={{borderLeft:`3px solid ${color}`,paddingLeft:6,paddingTop:3,paddingBottom:3}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:1}}><span style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color,textTransform:"uppercase"}}>{PL[i]||`P${i+1}`}</span><Bdg t={txt} lim={WL[sk]}/></div>
+              <p style={{margin:"0 0 2px",fontSize:10,color:"#3D2010",lineHeight:1.5}}>{txt}</p>
+              {iss.map((x,ii)=><div key={ii} style={{fontSize:9,color:"#EF4444",borderLeft:"2px solid #EF4444",paddingLeft:4}}>{x.label}: "{x.found}"</div>)}
+            </div>;})}
+            {cView==="slots"&&Object.entries(ch.s).filter(([,v])=>v).map(([sk,text])=><div key={sk} style={{border:`1px solid ${color}40`,borderRadius:4,padding:"4px 6px",background:`${color}08`}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:1}}><span style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color,textTransform:"uppercase"}}>{SL[sk]}</span><Bdg t={text} lim={WL[sk]}/></div>
+              <p style={{margin:0,fontSize:10,color:"#3D2010",lineHeight:1.4,fontStyle:"italic"}}>"{text}"</p>
+            </div>)}
+            {cView==="open"&&<div style={{border:`2px solid ${color}`,borderRadius:6,padding:"7px 8px",background:`${color}10`}}>
+              <div style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color,textTransform:"uppercase",marginBottom:3}}>First word: {ch.s.opening?.split(/[\s—]/)[0]}</div>
+              <p style={{margin:"0 0 4px",fontSize:10,color:"#3D2010",fontStyle:"italic"}}>"{ch.s.opening}"</p>
+              <div style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color,textTransform:"uppercase",marginBottom:2,marginTop:4}}>P2 opens</div>
+              <p style={{margin:0,fontSize:10,color:"#3D2010",fontWeight:"bold"}}>"{ch.s.p2?.split(" ").slice(0,6).join(" ")}…"</p>
+            </div>}
+          </div>;})}
+        </div>}
+      </div>}
+
+      {/* ═══ OPENINGS ═══ */}
+      {activeTab==="openings"&&<div>
+        {olV.length>0?<div style={{background:"#FEF2F2",border:"2px solid #EF4444",borderRadius:7,padding:"7px 10px",marginBottom:8}}>
+          <div style={{fontSize:11,fontFamily:"sans-serif",fontWeight:"bold",color:"#991B1B",marginBottom:4}}>⚠ {olV.length} violation{olV.length!==1?"s":""}</div>
+          {olV.map((v,i)=><div key={i} style={{fontSize:10,color:"#7A1010",fontFamily:"sans-serif"}}>Ch{v.chs[0]} and Ch{v.chs[1]}: consecutive "{v.word}" openers.</div>)}
+        </div>:<div style={{background:"#ECFDF5",border:"1.5px solid #A7F3D0",borderRadius:6,padding:"5px 10px",marginBottom:8,fontSize:10,fontFamily:"sans-serif",color:"#065F46"}}>✓ No variety violations</div>}
+        <div style={{display:"flex",flexDirection:"column",gap:3}}>
+          {ol.map(l=>{const color=SC[l.section];const hasV=olV.some(v=>v.chs.includes(l.num));const iss=chk(l.line);const isEditing=olEditCh===l.num;return <div key={l.num} style={{border:`1.5px solid ${hasV||iss.length>0?"#FECACA":"#E2D0BC"}`,borderRadius:6,padding:"6px 9px",background:hasV||iss.length>0?"#FFF5F5":"#fff"}}>
+            <div style={{display:"flex",alignItems:"center",gap:5,marginBottom:3}}>
+              <Pill n={l.num} color={color}/>
+              <span style={{fontSize:9,fontFamily:"sans-serif",fontWeight:"bold",background:hasV?"#FEF2F2":"#FFF8EE",color:hasV?"#EF4444":color,border:`1px solid ${hasV?"#EF4444":color}`,borderRadius:20,padding:"1px 7px"}}>{l.fw||"—"}</span>
+              {(hasV||iss.length>0)&&<span style={{fontSize:9,color:"#EF4444"}}>⚠</span>}
+              <span style={{marginLeft:"auto"}}><Bdg t={l.line} lim={WL.opening}/></span>
+              {!isEditing&&<button onClick={()=>{setOlEditCh(l.num);setOlEditTxt(l.line||"");}} style={{fontSize:9,fontFamily:"sans-serif",color:"#7A4A30",background:"#FFF8EE",border:"1px solid #C8860A",borderRadius:4,padding:"2px 7px",cursor:"pointer"}}>Edit</button>}
+            </div>
+            {isEditing?<div>
+              <textarea value={olEditTxt} onChange={e=>setOlEditTxt(e.target.value)} style={{width:"100%",minHeight:60,border:`1.5px solid ${chk(olEditTxt).length>0?"#EF4444":"#C8860A"}`,borderRadius:5,padding:"6px 8px",fontSize:11,fontFamily:"Georgia,serif",color:"#3D2010",background:"#FDF8F0",resize:"vertical",boxSizing:"border-box",lineHeight:1.6}}/>
+              {chk(olEditTxt).length>0&&<div style={{display:"flex",flexDirection:"column",gap:2,marginBottom:4}}>
+                {chk(olEditTxt).map((x,ii)=><div key={ii} style={{fontSize:9,fontFamily:"sans-serif",color:"#991B1B",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:4,padding:"3px 7px"}}>⚠ {x.label}: "{x.found}" — {x.fix}</div>)}
+              </div>}
+              <div style={{display:"flex",gap:5,marginTop:5}}>
+                <button onClick={()=>{const nc=chs.map(c=>c.num===l.num?{...c,s:{...c.s,opening:olEditTxt}}:c);setChs(nc);save(nc,null,null);setOlEditCh(null);}} style={{flex:1,fontSize:10,fontFamily:"sans-serif",fontWeight:"bold",background:"#7A4A30",color:"#FDF8F0",border:"none",borderRadius:5,padding:"6px 0",cursor:"pointer"}}>Save</button>
+                <button onClick={()=>setOlEditCh(null)} style={{flex:1,fontSize:10,fontFamily:"sans-serif",fontWeight:"bold",background:"#FFF8EE",color:"#7A4A30",border:"1px solid #C8860A",borderRadius:5,padding:"6px 0",cursor:"pointer"}}>Cancel</button>
+              </div>
+            </div>:<p style={{margin:"0 0 3px",fontSize:11,color:l.line?"#3D2010":"#9B7B5E",lineHeight:1.5,fontStyle:"italic"}}>{l.line?`"${l.line}"`:"— not loaded —"}</p>}
+            {!isEditing&&(hasV||iss.length>0)&&<div style={{marginTop:4,display:"flex",flexDirection:"column",gap:3}}>
+              {hasV&&<div style={{fontSize:9,fontFamily:"sans-serif",color:"#991B1B",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:4,padding:"3px 7px"}}>⚠ Consecutive opener — same first word as adjacent chapter.</div>}
+              {iss.map((x,ii)=><div key={ii} style={{fontSize:9,fontFamily:"sans-serif",color:"#991B1B",background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:4,padding:"3px 7px"}}>⚠ {x.label}: "{x.found}" — {x.fix}</div>)}
+            </div>}
+          </div>;})}
+        </div>
+      </div>}
+
+      {/* ═══ SIGN-OFF ═══ */}
+      {activeTab==="signoff"&&<div>
+        <select value={soCh} onChange={e=>setSoCh(Number(e.target.value))} style={{width:"100%",border:"1.5px solid #C8860A",borderRadius:7,padding:"9px 11px",fontSize:13,fontFamily:"sans-serif",color:"#3D2010",background:"#fff",marginBottom:12}}>
+          {chs.filter(c=>!arch.includes(c.num)).map(c=><option key={c.num} value={c.num}>Ch{c.num} — {c.title}</option>)}
+        </select>
+        <div style={{background:"#FFF8EE",border:"1.5px solid #E2D0BC",borderRadius:9,padding:"12px",marginBottom:12,fontSize:10,fontFamily:"sans-serif",color:"#7A4A30",lineHeight:1.7}}>
+          <div style={{fontWeight:"bold",marginBottom:5}}>Before approving — confirm:</div>
+          <div>✓ Auth scan clean — no violations</div>
+          <div>✓ Grammar read-aloud passed</div>
+          <div>✓ Word counts within limits</div>
+          <div>✓ SEO phrases placed naturally</div>
+          <div>✓ Door test — sounds like Manny or Colleen</div>
+        </div>
+        {!arch.includes(soCh)?
+          <button onClick={()=>approve(soCh)} style={{...btn("#C8860A","#FDF8F0"),width:"100%",borderRadius:9,padding:"15px 0",fontSize:14,fontWeight:"bold",boxShadow:"0 0 0 3px #FDE68A, 0 0 0 6px #C8860A40"}}>
+            ✓ Approve Ch{soCh} — Save & Export
+          </button>:
+          <div style={{background:"#ECFDF5",border:"2px solid #10B981",borderRadius:9,padding:"13px",textAlign:"center",fontSize:13,fontWeight:"bold",color:"#065F46"}}>✅ Ch{soCh} — PDF Done</div>
+        }
+      </div>}
+
+      {/* ═══ EDIT ═══ */}
+      {activeTab==="edit"&&(()=>{
+        const ch=chs.find(c=>c.num===editCh);
+        const isBody=editKey.startsWith("p");const pIdx=isBody?parseInt(editKey.slice(1)):null;const sk=!isBody?editKey.slice(2):null;
+        const slotKey=isBody?(["p1","p2","p3","p4","p5"][pIdx]||`p${pIdx+1}`):sk;
+        const iss=chk(editTxt);const bdg=badge(editTxt,WL[slotKey]);
+        const label=isBody?(ch?.p?.length===5?(PL[pIdx]||`Para ${pIdx+1}`):`Para ${pIdx+1}`):(SL[sk]||sk);
+        const saveEdit=()=>{if(!ch)return;setChs(prev=>prev.map(c=>{if(c.num!==editCh)return c;if(isBody){const np=[...c.p];np[pIdx]=editTxt;return{...c,p:np};}return{...c,s:{...c.s,[sk]:editTxt}};}));setEditSaved(true);setTimeout(()=>setEditSaved(false),2000);};
+        const bodyOpts=ch?.p?.map((t,i)=>({key:`p${i}`,label:ch.p.length===5?(PL[i]||`Para ${i+1}`):`Para ${i+1}`}))||[];
+        const slotOpts=Object.keys(SL).filter(k=>ch?.s?.[k]).map(k=>({key:`s-${k}`,label:SL[k]}));
+        return <div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
+            <div><div style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color:"#9B7B5E",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Chapter</div>
+            <select value={editCh} onChange={e=>{setEditCh(Number(e.target.value));setEditKey("p0");}} style={{width:"100%",border:"1.5px solid #C8860A",borderRadius:5,padding:"5px 7px",fontSize:11,fontFamily:"sans-serif",color:"#3D2010",background:"#fff"}}>{chs.map(c=><option key={c.num} value={c.num}>Ch{c.num} — {c.title}</option>)}</select></div>
+            <div><div style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color:"#9B7B5E",textTransform:"uppercase",letterSpacing:1,marginBottom:3}}>Element</div>
+            <select value={editKey} onChange={e=>setEditKey(e.target.value)} style={{width:"100%",border:"1.5px solid #C8860A",borderRadius:5,padding:"5px 7px",fontSize:11,fontFamily:"sans-serif",color:"#3D2010",background:"#fff"}}>
+              <optgroup label="Body">{bodyOpts.map(o=><option key={o.key} value={o.key}>{o.label}</option>)}</optgroup>
+              <optgroup label="Slots">{slotOpts.map(o=><option key={o.key} value={o.key}>{o.label}</option>)}</optgroup>
+            </select></div>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+            <span style={{fontSize:10,fontFamily:"sans-serif",fontWeight:"bold",color:"#7A4A30"}}>{label}</span>
+            <div style={{display:"flex",alignItems:"center",gap:5}}><Bdg t={editTxt} lim={WL[slotKey]}/>{iss.length>0&&<span style={{fontSize:9,color:"#EF4444",fontFamily:"sans-serif",fontWeight:"bold"}}>⚠ {iss.length}</span>}</div>
+          </div>
+          <textarea value={editTxt} onChange={e=>{setEditTxt(e.target.value);setEditSaved(false);}} style={{width:"100%",minHeight:120,border:`1.5px solid ${iss.length>0?"#EF4444":"#C8860A"}`,borderRadius:6,padding:"9px 11px",fontSize:12,fontFamily:"Georgia,serif",color:"#3D2010",background:"#FDF8F0",resize:"vertical",boxSizing:"border-box",lineHeight:1.65}}/>
+          {iss.length>0&&<div style={{marginTop:4,display:"flex",flexDirection:"column",gap:3}}>{iss.map((x,i)=><div key={i} style={{fontSize:9,fontFamily:"sans-serif",borderLeft:"3px solid #EF4444",paddingLeft:6,color:"#EF4444"}}><strong>{x.label}</strong> — "{x.found}" — {x.fix}</div>)}</div>}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginTop:8}}>
+            <button onClick={()=>{const ch2=chs.find(c=>c.num===editCh);if(!ch2)return;setEditTxt(isBody?(ch2.p?.[pIdx]||""):(ch2.s?.[sk]||""));setEditSaved(false);}} style={{...btn("#FFF8EE","#7A4A30"),border:"1.5px solid #C8860A",borderRadius:6,padding:"7px 0",fontSize:11,fontWeight:"bold"}}>Revert</button>
+            <button onClick={saveEdit} style={{...btn(editSaved?"#10B981":"#7A4A30","#FDF8F0"),borderRadius:6,padding:"7px 0",fontSize:11,fontWeight:"bold"}}>{editSaved?"✓ Saved":"Save"}</button>
+          </div>
+        </div>;
+      })()}
+
+      {/* ═══ LINKS ═══ */}
+      {activeTab==="links"&&(()=>{
+        const goFix=(r)=>{
+          const ch=chs.find(c=>c.num===r.ch);
+          const p5=ch?.p?.[4]||"";
+          setTab("tracker");
+          setExp(r.ch);
+          setStab(prev=>({...prev,[r.ch]:"body"}));
+          setInlE({cn:r.ch,key:"p4",src:"p",lim:55,ital:false});
+          setInlTxt(p5);
+        };
+        const results=RESOURCE_MAP.map(r=>{
+          const ch=chs.find(c=>c.num===r.ch);
+          const allText=ch?[...(ch.p||[]),ch.s?.opening||"",ch.s?.encourage1||"",ch.s?.encourage2||"",ch.s?.quote||"",ch.s?.tip||""].join(" "):"";
+          const found=allText.includes(r.phrase);
+          const pending=!ch||ch.status!=="completed";
+          const extras=chs.filter(c=>c.num!==r.ch&&c.status==="completed").filter(c=>{
+            const t=[...(c.p||[]),c.s?.opening||"",c.s?.encourage1||"",c.s?.encourage2||"",c.s?.quote||"",c.s?.tip||""].join(" ");
+            return t.includes(r.phrase);
+          }).map(c=>c.num);
+          return{...r,found,pending,extras};
+        });
+        const pass=results.filter(r=>r.found).length;
+        const fail=results.filter(r=>!r.found&&!r.pending).length;
+        const pend=results.filter(r=>r.pending).length;
+        return <div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:5,marginBottom:10}}>
+            {[{lbl:"Pass",n:pass,bg:"#ECFDF5",bc:"#10B981",fc:"#065F46"},{lbl:"Fail",n:fail,bg:"#FEF2F2",bc:"#EF4444",fc:"#991B1B"},{lbl:"Pending",n:pend,bg:"#FFF8EE",bc:"#C8860A",fc:"#7A4A30"}].map(({lbl,n,bg,bc,fc})=>(
+              <div key={lbl} style={{background:bg,border:`2px solid ${bc}`,borderRadius:7,padding:"6px 4px",textAlign:"center"}}>
+                <div style={{fontSize:17,fontWeight:"bold",color:fc,fontFamily:"sans-serif"}}>{n}</div>
+                <div style={{fontSize:8,color:fc,fontFamily:"sans-serif",textTransform:"uppercase",letterSpacing:1}}>{lbl}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            {results.map(r=>{
+              const status=r.pending?"pending":r.found?"pass":"fail";
+              const bg=status==="pass"?"#F0FDF4":status==="fail"?"#FFF5F5":"#FFFBF0";
+              const bc=status==="pass"?"#A7F3D0":status==="fail"?"#FECACA":"#FDE68A";
+              const ic=status==="pass"?"✅":status==="fail"?"❌":"⏳";
+              return <div key={r.key} style={{background:bg,border:`1.5px solid ${bc}`,borderRadius:7,padding:"8px 10px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                  <span style={{fontSize:12}}>{ic}</span>
+                  <span style={{fontSize:10,fontWeight:"bold",color:"#3D2010",fontFamily:"sans-serif",flex:1}}>{r.label}</span>
+                  <span style={{fontSize:9,fontFamily:"sans-serif",color:"#9B7B5E"}}>Ch{r.ch}</span>
+                </div>
+                <div style={{fontSize:9,color:"#7A6555",fontFamily:"Georgia,serif",fontStyle:"italic",paddingLeft:18,lineHeight:1.4,marginBottom:status==="fail"?5:0}}>"{r.phrase}"</div>
+                {status==="fail"&&<>
+                  <div style={{fontSize:8,color:"#7A4A30",fontFamily:"sans-serif",paddingLeft:18,marginBottom:6,lineHeight:1.4}}>
+                    Weave <strong>"{r.phrase}"</strong> into P5 of Ch{r.ch} — phrase must appear in prose to activate the link.
+                  </div>
+                  <div style={{display:"flex",gap:5,paddingLeft:18}}>
+                    <button onClick={()=>goFix(r)} style={{flex:2,background:"#7A4A30",color:"#FDF8F0",border:"none",borderRadius:5,padding:"5px 0",fontSize:9,fontWeight:"bold",cursor:"pointer",fontFamily:"sans-serif"}}>✏ Fix in P5 — Ch{r.ch}</button>
+                    <button onClick={()=>navigator.clipboard?.writeText(r.phrase).catch(()=>{})} style={{flex:1,background:"#F5EDE0",color:"#7A4A30",border:"1px solid #C4A882",borderRadius:5,padding:"5px 0",fontSize:9,cursor:"pointer",fontFamily:"sans-serif"}}>Copy phrase</button>
+                  </div>
+                </>}
+                {r.found&&r.extras.length>0&&<div style={{fontSize:8,color:"#10B981",fontFamily:"sans-serif",paddingLeft:18,marginTop:2}}>Also referenced in Ch{r.extras.join(", Ch")}</div>}
+                {status==="pending"&&<div style={{fontSize:8,color:"#92400E",fontFamily:"sans-serif",paddingLeft:18,marginTop:2}}>Ch{r.ch} not yet written — add phrase to P5 when chapter is ready</div>}
+              </div>;
+            })}
+          </div>
+          {fail>0&&<div style={{marginTop:8,background:"#FEF2F2",border:"1.5px solid #EF4444",borderRadius:6,padding:"7px 10px",fontSize:10,fontFamily:"sans-serif",color:"#991B1B",fontWeight:"bold",textAlign:"center"}}>⚠️ {fail} broken link{fail>1?"s":""} — fix before building PDF</div>}
+          {fail===0&&pass>0&&<div style={{marginTop:8,background:"#F0FDF4",border:"1.5px solid #10B981",borderRadius:6,padding:"7px 10px",fontSize:10,fontFamily:"sans-serif",color:"#065F46",fontWeight:"bold",textAlign:"center"}}>✅ All verified links pass</div>}
+        </div>;
+      })()}
+
+      {/* ═══ WAGGY ═══ */}
+      {activeTab==="waggy"&&<div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5,marginBottom:10}}>
+          {[["Total",wcE.length],["Door",wcE.filter(e=>e.cat==="Door Moments").length],["Owner",wcE.filter(e=>e.cat==="Owner Language").length]].map(([lbl,n])=>(
+            <div key={lbl} style={{background:"#FFF8EE",border:"1.5px solid #C8860A",borderRadius:7,padding:"7px 5px",textAlign:"center"}}>
+              <div style={{fontSize:19,fontWeight:"bold",color:"#7A4A30",fontFamily:"sans-serif"}}>{n}</div>
+              <div style={{fontSize:8,color:"#9B7B5E",fontFamily:"sans-serif",textTransform:"uppercase",letterSpacing:1}}>{lbl}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{background:"#FFF8EE",border:"1.5px solid #C8860A",borderRadius:9,padding:"11px",marginBottom:12}}>
+          <div style={{fontSize:9,fontFamily:"sans-serif",fontWeight:"bold",color:"#7A4A30",textTransform:"uppercase",letterSpacing:1,marginBottom:7}}>Add Entry</div>
+          <textarea value={wcIn} onChange={e=>{setWcIn(e.target.value);setWcScan(null);}} placeholder="Type owner language here..." style={{width:"100%",minHeight:65,border:"1.5px solid #C8860A",borderRadius:6,padding:"8px 10px",fontSize:12,fontFamily:"Georgia,serif",color:"#3D2010",background:"#fff",resize:"vertical",boxSizing:"border-box",lineHeight:1.6}}/>
+          {wcScan!==null&&<div style={{marginTop:5,marginBottom:5}}>{wcScan.length===0?<div style={{background:"#ECFDF5",border:"1px solid #A7F3D0",borderRadius:5,padding:"5px 9px",fontSize:10,fontFamily:"sans-serif",color:"#065F46",fontWeight:"bold"}}>✓ Clean</div>:<div style={{background:"#FFF5F5",border:"1px solid #FECACA",borderRadius:5,padding:"6px 9px"}}><div style={{fontSize:9,fontFamily:"sans-serif",fontWeight:"bold",color:"#991B1B",marginBottom:4}}>⚠ {wcScan.length} flag{wcScan.length!==1?"s":""}</div>{wcScan.map((x,i)=><div key={i} style={{fontSize:9,color:"#EF4444",borderLeft:"2px solid #EF4444",paddingLeft:6,marginBottom:3}}>"{x.found}" — {x.fix}</div>)}</div>}</div>}
+          <div style={{display:"flex",gap:6,marginTop:7,alignItems:"center"}}>
+            <select value={wcCat} onChange={e=>setWcCat(e.target.value)} style={{flex:1,border:"1.5px solid #C8860A",borderRadius:6,padding:"6px 8px",fontSize:11,fontFamily:"sans-serif",color:"#3D2010",background:"#fff"}}>{WC_CATS.map(c=><option key={c} value={c}>{c}</option>)}</select>
+            <button onClick={()=>{if(!wcIn.trim())return;const hits=chk(wcIn);setWcScan(hits);if(hits.length===0){setWcE(prev=>[{id:Date.now(),text:wcIn.trim(),cat:wcCat,date:new Date().toLocaleDateString()},...prev]);setWcIn("");setWcScan(null);}}} disabled={!wcIn.trim()} style={{...btn(wcIn.trim()?"#7A4A30":"#EAD9C4",wcIn.trim()?"#FDF8F0":"#9B7B5E"),flexShrink:0,borderRadius:6,padding:"6px 16px",fontSize:11,fontWeight:"bold",cursor:wcIn.trim()?"pointer":"default"}}>{wcScan&&wcScan.length>0?"Add Anyway":"Add"}</button>
+          </div>
+        </div>
+        {wcE.length>0&&<div>
+          <input value={wcSearch} onChange={e=>setWcSearch(e.target.value)} placeholder="Search..." style={{width:"100%",border:"1.5px solid #C8860A",borderRadius:6,padding:"7px 10px",fontSize:11,fontFamily:"sans-serif",color:"#3D2010",background:"#fff",boxSizing:"border-box",marginBottom:7}}/>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:10}}>
+            {["All",...WC_CATS].map(c=><button key={c} onClick={()=>setWcFilt(c)} style={{...btn(wcFilt===c?(CC[c]||"#7A4A30"):"#FFF8EE",wcFilt===c?"#FDF8F0":(CC[c]||"#7A4A30")),border:`1.5px solid ${CC[c]||"#C8860A"}`,borderRadius:20,padding:"3px 10px",fontSize:9,fontFamily:"sans-serif",fontWeight:"bold",whiteSpace:"nowrap"}}>{c}{c!=="All"&&` (${wcE.filter(e=>e.cat===c).length})`}</button>)}
+          </div>
+        </div>}
+        {wcFil.length===0?<div style={{textAlign:"center",padding:"28px 0",color:"#B8A090",fontSize:11,fontFamily:"sans-serif"}}><div style={{fontSize:22,marginBottom:7}}>🎙</div>{wcE.length===0?"No entries yet.":"No entries match."}</div>:
+        <div style={{display:"flex",flexDirection:"column",gap:5}}>
+          {wcFil.map(e=><div key={e.id} style={{border:"1.5px solid #E2D0BC",borderRadius:7,padding:"9px 11px",background:"#fff",borderLeft:`4px solid ${CC[e.cat]||"#C8860A"}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
+              <span style={{fontSize:8,fontFamily:"sans-serif",fontWeight:"bold",color:CC[e.cat]||"#C8860A",textTransform:"uppercase",background:`${CC[e.cat]||"#C8860A"}18`,borderRadius:20,padding:"2px 7px"}}>{e.cat}</span>
+              <div style={{display:"flex",alignItems:"center",gap:7}}>
+                <span style={{fontSize:8,fontFamily:"sans-serif",color:"#B8A090"}}>{e.date}</span>
+                <button onClick={()=>setWcE(prev=>prev.filter(x=>x.id!==e.id))} style={{...btn("none","#D4A0A0"),fontSize:13,padding:"0 2px"}}>×</button>
+              </div>
+            </div>
+            <p style={{margin:0,fontSize:12,color:"#3D2010",lineHeight:1.65,fontFamily:"Georgia,serif"}}>{e.text}</p>
+          </div>)}
+        </div>}
+      </div>}
+
+    </div>
+    </div>
+  </div>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(Dash));
+</script>
+
+</body>
+</html>
